@@ -10,32 +10,34 @@ import { availableStoryChoice, canReleaseBear } from "./story-rules";
 import { CHOICES } from "./story";
 import { DIFFICULTY, pickSpread, pickWander, type Difficulty, type DifficultyPreset } from "./difficulty";
 import { buildCircus, tentWallTexture } from "./circus";
+import { buildCabinet, buildCorpse, buildExhibit, buildCutout, buildCage, buildPopcornCart, scatterTrash, plankTexture, tileTexture } from "./props";
 
 // Legend: # brick wall, M mirror, . floor, D operator door, H locker, T table (hide),
-// A arcade, 1/2/3 generators, f fuse, c cog, P start, X exit gate
+// A arcade, 1/2/3 generators, P start, X exit gate,
+// B building wall, , building floor (roofed), E exhibit case, K corpse, R trash pile
 const MAP = [
-  "########################",
-  "#.....#....#...........#",
-  "#.1...#.T..D.....2.....#",
-  "#.....#....#...........#",
-  "###.#########.#######.##",
-  "#......................#",
-  "#.MMMMMMM....A....###..#",
-  "#.M.....M........#.H#..#",
-  "#.M.MMM.M........#..#..#",
-  "#.M.M...M....H...##.#..#",
-  "#.M.M.MMM...........#.##",
-  "#.M.M...M.......#####..#",
-  "#...MMM.M.......#.3....#",
-  "#MMMM...M.......#....H.#",
-  "#.......M.......##.#####",
-  "#..H.......P...........#",
-  "##########XX############",
+  "##################################",
+  "#.....#....#...........B,,,,,,,,,#",
+  "#.1...#.T..D.....2.....B,E,,E,,E,#",
+  "#.....#....#...........,,,,,,,,,,#",
+  "###.#########.#######.#B,E,,,,E,,#",
+  "#......................BBBBBB,BBB#",
+  "#.MMMMMMM....A....###..#.........#",
+  "#.M.....M........#.H#....R.....R.#",
+  "#.M.MMM.M........#..#..#.........#",
+  "#.M.M...M....H...##.#..#...R.....#",
+  "#.M.M.MMM...........#.#BBBB,BBBBB#",
+  "#.M.M...M.......#####..B,,,,,,,,,#",
+  "#...MMM.M.......#.3....B,K,,,,K,,#",
+  "#MMMM...M.......#....H.B,,,,,,,,,#",
+  "#.......M.......##.####B,,K,,,,,,#",
+  "#..H.......P...........B,,,,,,,,,#",
+  "##########XX######################",
 ];
 const S = 3;
 const WALL_H = 4.2;
 const ROWS = MAP.length;
-const COLS = 24;
+const COLS = 34;
 
 export type InvId = "fuse" | "cog" | "key" | "tokens" | "mechkey";
 export type TokenColor = "red" | "blue" | "yellow";
@@ -78,6 +80,19 @@ interface Interactable {
   alive: boolean;
   mesh?: THREE.Object3D;
   bob?: boolean;
+  spin?: boolean;
+}
+interface Cabinet { hinge: THREE.Group; itemPos: THREE.Vector3; open: number; opening: boolean; loot?: Interactable }
+
+function liteify(root: THREE.Object3D) {
+  // Lambert without emissive maps compiles on every phone GPU; keep a strong self-glow so the bear stays visible.
+  root.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    const m = mesh.material as THREE.MeshStandardMaterial | undefined;
+    if (!mesh.isMesh || !m || !(m as THREE.MeshStandardMaterial).isMeshStandardMaterial) return;
+    mesh.material = new THREE.MeshLambertMaterial({ map: m.map, color: m.color, emissive: m.emissive?.getHex() ? m.emissive : m.color.clone().multiplyScalar(0.25), emissiveIntensity: Math.max(0.45, m.emissiveIntensity), transparent: m.transparent, opacity: m.opacity });
+    mesh.castShadow = false;
+  });
 }
 
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
@@ -199,6 +214,7 @@ export class Game {
     this.sfx.startRain();
     this.startT = performance.now();
     this.flashMessage(L("Почините 3 электрощитка, чтобы открыть ворота. Берегитесь Аниматроника. Призрак сторожа рядом — поговорите с ним.", "Repair 3 fuse boxes to open the gate. Beware of the Animatronic. The watchman's ghost is nearby — talk to him."), 6);
+    if (this.D.practice) this.flashMessage(L("РЕЖИМ ПРАКТИКИ: Аниматроник бродит по парку, но не может вас поймать. Фонарик не садится.", "PRACTICE MODE: the Animatronic roams the park but cannot catch you. The flashlight never drains."), 7);
     this.loop();
   }
 
@@ -211,7 +227,7 @@ export class Game {
     const ch = MAP[r][c] ?? "#";
     if (ch === "D") return !this.doorOpen;
     if (ch === "X") return forMonster || !this.gateOpen;
-    return "#MHTA123".includes(ch);
+    return "#MHTA123BE".includes(ch);
   }
   private solidAt(x: number, z: number, forMonster = false) {
     const [c, r] = this.cell(x, z);
@@ -231,7 +247,7 @@ export class Game {
     for (let i = 1; i < n; i++) {
       const t = i / n;
       const ch = MAP[Math.floor((az + (bz - az) * t) / S)]?.[Math.floor((ax + (bx - ax) * t) / S)];
-      if (ch === undefined || ch === "#" || ch === "M" || (ch === "D" && !this.doorOpen)) return false;
+      if (ch === undefined || ch === "#" || ch === "M" || ch === "B" || (ch === "D" && !this.doorOpen)) return false;
     }
     return true;
   }
@@ -298,18 +314,20 @@ export class Game {
     this.cubeCam.position.set(cx(5), 1.7, cx(10));
     sc.add(this.cubeCam);
     const mirror = new THREE.MeshStandardMaterial({ color: "#b8c4c8", metalness: 1, roughness: 0.04, envMap: this.cubeCam.renderTarget.texture, envMapIntensity: 1.6 });
-    const groups: Record<string, [number, number][]> = { brick: [], stripe: [], mirror: [] };
+    const groups: Record<string, [number, number][]> = { brick: [], stripe: [], mirror: [], plank: [] };
     const special: Record<string, [number, number][]> = {};
     for (let r = 0; r < ROWS; r++)
       for (let c = 0; c < COLS; c++) {
         const ch = MAP[r][c] ?? "#";
         if (ch === "#") groups[(r <= 4 && c >= 11) || (r >= 10 && c >= 16 && r <= 14) ? "stripe" : "brick"].push([c, r]);
         else if (ch === "M") groups.mirror.push([c, r]);
+        else if (ch === "B") groups.plank.push([c, r]);
         else (special[ch] ??= []).push([c, r]);
       }
     const box = new THREE.BoxGeometry(S, WALL_H, S);
     const dummy = new THREE.Object3D();
-    for (const [name, mat] of [["brick", brick], ["stripe", stripe], ["mirror", mirror]] as const) {
+    const plank = new THREE.MeshStandardMaterial({ map: plankTexture(), roughness: 0.95 });
+    for (const [name, mat] of [["brick", brick], ["stripe", stripe], ["mirror", mirror], ["plank", plank]] as const) {
       const list = groups[name];
       const im = new THREE.InstancedMesh(box, mat, list.length);
       list.forEach(([c, r], i) => {
@@ -462,6 +480,8 @@ export class Game {
     addSign("CIRCUS", "#ffb347", cx(12), 4 * S + S + 0.02, 0, 6);
     this.circus = buildCircus(sc, { width: COLS * S, depth: ROWS * S, wallH: WALL_H, ring: new THREE.Vector3(cx(12), 0, cx(10)), plazaR: 4.6 });
 
+    this.buildInteriors(special);
+
     // garlands
     const bulbPos: THREE.Vector3[] = [];
     const catenary = (a: THREE.Vector3, b: THREE.Vector3, n: number) => {
@@ -567,6 +587,7 @@ export class Game {
 
     // monster
     this.bear = buildBear(this.skin);
+    if (this.isTouch) liteify(this.bear.root);
     sc.add(this.bear.root);
     const ghost = buildGhost();
     ghost.root.position.set(cx(10), 0, cx(15));
@@ -603,7 +624,113 @@ export class Game {
       sc.add(d.root);
       this.decoys.push(d.root);
     }
+    // Mobile GPUs fail to compile lit shaders when the scene has many point lights,
+    // which made the animatronic render invisible. Keep only the bear's own lights there.
+    if (this.isTouch) {
+      const keep = new Set<THREE.Object3D>();
+      this.bear.root.traverse((o) => keep.add(o));
+      const drop: THREE.Object3D[] = [];
+      sc.traverse((o) => { if ((o as THREE.PointLight).isPointLight && !keep.has(o)) drop.push(o); });
+      for (const o of drop) o.removeFromParent();
+      for (const d of this.decoys) d.traverse((o) => { if ((o as THREE.PointLight).isPointLight) o.removeFromParent(); });
+    }
     void special;
+  }
+
+  private cabinets: Cabinet[] = [];
+  private addCabinet(c: number, r: number, dir: number[]): Cabinet {
+    const [dc, dr] = dir;
+    const cab = buildCabinet();
+    cab.group.position.set(cx(c) + dc * (S / 2 - 0.34), 0, cx(r) + dr * (S / 2 - 0.34));
+    cab.group.rotation.y = Math.atan2(-dc, -dr);
+    this.scene.add(cab.group);
+    cab.group.updateMatrixWorld(true);
+    const itemPos = cab.group.localToWorld(cab.inside.clone());
+    const rec: Cabinet = { hinge: cab.hinge, itemPos, open: 0, opening: false };
+    const front = cab.group.localToWorld(new THREE.Vector3(0, 1.0, 0.45));
+    const it: Interactable = {
+      pos: front, alive: true,
+      label: () => L("Открыть сломанный шкафчик", "Open broken cabinet"),
+      use: () => {
+        it.alive = false;
+        rec.opening = true;
+        this.sfx.door();
+        this.noise(front, 6);
+        if (!rec.loot) this.flashMessage(L(["Пусто. Только паутина и ржавчина.", "Внутри лишь старый клоунский нос.", "Пусто… кто-то обыскал его раньше."][Math.floor(Math.random() * 3)], ["Empty. Just cobwebs and rust.", "Only an old clown nose inside.", "Empty… someone searched it before you."][Math.floor(Math.random() * 3)]), 2.5);
+      },
+    };
+    this.interactables.push(it);
+    this.cabinets.push(rec);
+    return rec;
+  }
+
+  /** Roofed buildings, exhibits, corpses, trash and circus props. */
+  private buildInteriors(special: Record<string, [number, number][]>) {
+    const sc = this.scene;
+    const inside: [number, number][] = [];
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (",KE".includes(MAP[r][c])) inside.push([c, r]);
+    const dummy = new THREE.Object3D();
+    const tiles = tileTexture();
+    const floorIm = new THREE.InstancedMesh(new THREE.PlaneGeometry(S, S), new THREE.MeshStandardMaterial({ map: tiles, roughness: 0.8 }), inside.length);
+    const roofIm = new THREE.InstancedMesh(new THREE.BoxGeometry(S, 0.3, S), new THREE.MeshStandardMaterial({ map: plankTexture(), color: "#6a5a4a", roughness: 1 }), inside.length);
+    inside.forEach(([c, r], i) => {
+      dummy.position.set(cx(c), 0.012, cx(r)); dummy.rotation.set(-Math.PI / 2, 0, 0); dummy.updateMatrix(); floorIm.setMatrixAt(i, dummy.matrix);
+      dummy.position.set(cx(c), WALL_H + 0.15, cx(r)); dummy.rotation.set(0, 0, 0); dummy.updateMatrix(); roofIm.setMatrixAt(i, dummy.matrix);
+    });
+    floorIm.receiveShadow = true;
+    sc.add(floorIm, roofIm);
+    // bare hanging bulbs (emissive, no real lights — cheap on phones)
+    const bulbMat = new THREE.MeshBasicMaterial({ color: "#ffd890", toneMapped: false });
+    const wireMat = new THREE.LineBasicMaterial({ color: "#111" });
+    inside.filter((_, i) => i % 6 === 0).forEach(([c, r]) => {
+      const b = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), bulbMat);
+      b.position.set(cx(c), WALL_H - 0.9, cx(r));
+      sc.add(b, new THREE.Line(new THREE.BufferGeometry().setFromPoints([b.position, b.position.clone().setY(WALL_H)]), wireMat));
+    });
+    if (!this.isTouch) for (const [c, r, col] of [[27, 3, "#ffb070"], [27, 13, "#ff6a50"]] as const) {
+      const l = new THREE.PointLight(col, 8, 14, 2);
+      l.position.set(cx(c), WALL_H - 1, cx(r));
+      sc.add(l);
+      this.signs.push({ mat: bulbMat, light: l, base: 8, t: Math.random() * 4 });
+    }
+    // exhibits in glass cases
+    (special["E"] ?? []).forEach(([c, r], i) => {
+      const e = buildExhibit(i);
+      e.position.set(cx(c), 0, cx(r));
+      e.rotation.y = r < 3 ? 0 : Math.PI;
+      sc.add(e);
+    });
+    // bodies of the missing staff
+    for (const [c, r] of special["K"] ?? []) {
+      const k = buildCorpse();
+      k.position.set(cx(c), 0, cx(r));
+      sc.add(k);
+    }
+    // circus props scattered around
+    const place = (g: THREE.Object3D, c: number, r: number, ry: number) => { g.position.set(cx(c), 0, cx(r)); g.rotation.y = ry; sc.add(g); };
+    place(buildCage(), 30, 8, 0.2);
+    place(buildPopcornCart(), 25, 8, 1.2);
+    place(buildCutout(), 24, 6, Math.PI / 2 + 0.3);
+    place(buildCutout(), 6, 15, 0.1);
+    place(buildPopcornCart(), 19, 5, -0.4);
+    place(buildCutout(), 15, 8, -0.6);
+    // trash everywhere, heavy piles on R cells
+    const light: THREE.Vector3[] = [];
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (".,K".includes(MAP[r][c]) && Math.random() < 0.45) light.push(this.cellCenter(c, r));
+    scatterTrash(sc, light, (special["R"] ?? []).map(([c, r]) => this.cellCenter(c, r)));
+    // building signs
+    const sign = (text: string, color: string, x: number, z: number, ry: number) => {
+      const mat = new THREE.MeshBasicMaterial({ map: signTexture(text, color), toneMapped: false, fog: false });
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(5, 1.25), mat);
+      m.position.set(x, WALL_H - 0.6, z); m.rotation.y = ry;
+      sc.add(m);
+      const l = new THREE.PointLight(color, 6, 8, 2);
+      l.position.set(x + Math.sin(ry) * 1.2, WALL_H - 1, z + Math.cos(ry) * 1.2);
+      sc.add(l);
+      this.signs.push({ mat, light: l, base: 6, t: Math.random() * 5 });
+    };
+    sign("FREAK SHOW", "#ff7a2a", 23 * S - 0.02, cx(1.6), -Math.PI / 2);
+    sign("BACKSTAGE", "#ff3b3b", cx(27), 10 * S - 0.02, Math.PI);
   }
 
   private cellCenter(c: number, r: number) {
@@ -626,25 +753,35 @@ export class Game {
         q.push([nc, nr]);
       }
     }
-    const free = cells.filter(([c, r]) => Math.abs(c - start[0]) + Math.abs(r - start[1]) > 3 && MAP[r][c] === ".");
     const nItems = 1 + 1 + 3 + this.D.batteries + 3; // fuse, key, tokens, batteries, notes
-    const spots = pickSpread(free, nItems, 6, [start]).reverse();
-    const next = () => spots.pop() ?? free[Math.floor(Math.random() * free.length)];
-    // the cog lives somewhere inside the locked operator room
+    // every item lives inside a broken cabinet standing against a wall
+    const wallDir = (c: number, r: number) => [[0, -1], [0, 1], [-1, 0], [1, 0]].find(([dc, dr]) => "#B".includes(MAP[r + dr]?.[c + dc] ?? "") && !this.solid(c - dc, r - dr));
+    const ok = ([c, r]: [number, number]) => ".,K".includes(MAP[r][c]) && Math.abs(c - start[0]) + Math.abs(r - start[1]) > 3 && !(c === 10 && r === 15) && r < ROWS - 2 + 1 && !!wallDir(c, r);
+    const cands = cells.filter(ok).filter(([c, r]) => !(r <= 3 && c >= 7 && c <= 10));
+    const indoor = cands.filter(([c, r]) => MAP[r][c] !== ".");
+    const picked = pickSpread(indoor, 7, 3, [start]);
+    const rest = pickSpread(cands.filter((x) => !picked.includes(x)), nItems + 6 - picked.length, 4, [start, ...picked]);
+    const spots = [...picked, ...rest].sort(() => Math.random() - 0.5);
+    const cabs = spots.map(([c, r]) => this.addCabinet(c, r, wallDir(c, r)!));
+    let ci = 0;
+    const next = () => cabs[ci++] ?? this.addCabinet(...spots[0], wallDir(...spots[0])!);
+    // the cog lives in a cabinet inside the locked operator room
     const room: [number, number][] = [];
-    for (let r = 1; r <= 3; r++) for (let c = 7; c <= 10; c++) if (MAP[r][c] === ".") room.push([c, r]);
+    for (let r = 1; r <= 3; r++) for (let c = 7; c <= 10; c++) if (MAP[r][c] === "." && wallDir(c, r)) room.push([c, r]);
     const cogCell = room[Math.floor(Math.random() * room.length)];
+    const cogCab = this.addCabinet(cogCell[0], cogCell[1], wallDir(...cogCell)!);
     this.tokenOrder = (["red", "blue", "yellow"] as TokenColor[]).sort(() => Math.random() - 0.5);
-    const spawn = (kind: ItemKind, c: number, r: number, label: string, onPick: () => boolean, color?: string) => {
+    const spawn = (kind: ItemKind, cab: Cabinet, label: string, onPick: () => boolean, color?: string) => {
       const mesh = buildItem(kind, color);
-      const p = new THREE.Vector3(cx(c) + rand(-0.6, 0.6), 0.6, cx(r) + rand(-0.6, 0.6));
-      mesh.position.copy(p);
+      mesh.scale.setScalar(0.85);
+      mesh.position.copy(cab.itemPos);
+      mesh.visible = false;
       this.scene.add(mesh);
       const it: Interactable = {
-        pos: p,
+        pos: cab.itemPos.clone(),
         mesh,
-        alive: true,
-        bob: true,
+        alive: false,
+        spin: true,
         label: () => label,
         use: () => {
           if (!onPick()) return;
@@ -653,6 +790,7 @@ export class Game {
           this.sfx.pickup();
         },
       };
+      cab.loot = it;
       this.interactables.push(it);
     };
     const inv = (id: InvId) => () => {
@@ -664,13 +802,13 @@ export class Game {
       return true;
     };
     const fc = next();
-    spawn("fuse", fc[0], fc[1], L("Подобрать предохранитель", "Pick up fuse"), inv("fuse"));
-    spawn("cog", cogCell[0], cogCell[1], L("Подобрать шестерню", "Pick up cog"), inv("cog"));
+    spawn("fuse", fc, L("Подобрать предохранитель", "Pick up fuse"), inv("fuse"));
+    spawn("cog", cogCab, L("Подобрать шестерню", "Pick up cog"), inv("cog"));
     const k = next();
-    spawn("key", k[0], k[1], L("Подобрать ключ от операторской", "Pick up operator room key"), inv("key"));
+    spawn("key", k, L("Подобрать ключ от операторской", "Pick up operator room key"), inv("key"));
     for (const col of this.tokenOrder) {
       const s = next();
-      spawn("token", s[0], s[1], L(`Подобрать жетон (${TOKEN_RU[col].toLowerCase()})`, `Pick up token (${TOKEN_RU[col].toLowerCase()})`), () => {
+      spawn("token", s, L(`Подобрать жетон (${TOKEN_RU[col].toLowerCase()})`, `Pick up token (${TOKEN_RU[col].toLowerCase()})`), () => {
         if (!this.give("tokens")) {
           this.flashMessage(L("Инвентарь полон (4 слота).", "Inventory full (4 slots)."));
           return false;
@@ -682,7 +820,7 @@ export class Game {
     }
     for (let i = 0; i < this.D.batteries; i++) {
       const s = next();
-      spawn("battery", s[0], s[1], L("Подобрать батарейку", "Pick up battery"), () => {
+      spawn("battery", s, L("Подобрать батарейку", "Pick up battery"), () => {
         if (this.battery > 95) {
           this.flashMessage(L("Фонарик заряжен полностью.", "Flashlight is fully charged."));
           return false;
@@ -700,7 +838,7 @@ export class Game {
     this.notesTotal = notes.length;
     for (const [kind, note] of notes) {
       const s = next();
-      spawn(kind, s[0], s[1], kind === "tape" ? L("Прослушать кассету", "Play tape") : L("Прочитать записку", "Read note"), () => {
+      spawn(kind, s, kind === "tape" ? L("Прослушать кассету", "Play tape") : L("Прочитать записку", "Read note"), () => {
         this.notes.push(note);
         if (note.tape) this.sfx.tape();
         this.openModal();
@@ -1104,7 +1242,7 @@ export class Game {
     this.sfx.setHeart(m.mode === "chase" ? 0.8 : dist < 12 ? 0.35 : 0);
 
     // catch
-    if (dist < 1.35 && (!this.hidden || m.knowsHide) && !canReleaseBear(this.releaseArmed, this.flashOn, dist, losOk)) {
+    if (!this.D.practice && dist < 1.35 && (!this.hidden || m.knowsHide) && !canReleaseBear(this.releaseArmed, this.flashOn, dist, losOk)) {
       this.state = "caught";
       this.caughtT = 0;
       this.hidden = null;
@@ -1200,6 +1338,15 @@ export class Game {
     for (const it of this.interactables) if (it.bob && it.alive && it.mesh) {
       it.mesh.position.y = 0.55 + Math.sin(t * 2 + it.pos.x) * 0.06;
       it.mesh.rotation.y += dt * 1.2;
+    }
+
+    for (const it of this.interactables) if (it.spin && it.alive && it.mesh) it.mesh.rotation.y += dt * 1.5;
+    for (const cb of this.cabinets) if (cb.opening && cb.open < 1) {
+      cb.open = Math.min(1, cb.open + dt * 1.8);
+      const e = 1 - Math.pow(1 - cb.open, 3);
+      // creaky swing with a little bounce on the broken hinge
+      cb.hinge.rotation.y = -e * 1.85 + Math.sin(cb.open * 14) * 0.06 * (1 - cb.open);
+      if (cb.open >= 0.45 && cb.loot && !cb.loot.alive && cb.loot.mesh && !cb.loot.mesh.visible) { cb.loot.mesh.visible = true; cb.loot.alive = true; }
     }
 
     // mirror decoys vanish when approached

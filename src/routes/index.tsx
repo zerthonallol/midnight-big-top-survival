@@ -193,7 +193,7 @@ function Page() {
         <div className="absolute inset-0 z-40 grid place-items-center bg-background p-6">
           <div className="fade-up w-full max-w-lg text-center">
             <h2 className="title-3d text-4xl md:text-5xl">{L("Выберите сложность", "Choose difficulty")}</h2>
-            <div className="mt-8 grid gap-3">
+            <div className="mt-8 grid gap-3 sm:grid-cols-2">
               {(Object.keys(DIFFICULTY) as Difficulty[]).map((d) => (
                 <Button key={d} variant="outline" disabled={starting} className="panel-glass h-auto flex-col items-start gap-1 rounded px-5 py-4 text-left" onClick={() => { setDifficulty(d); start(d); }}>
                   <span className="font-display text-xl">{lang === "ru" ? DIFFICULTY[d].ru : DIFFICULTY[d].en}</span>

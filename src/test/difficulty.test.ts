@@ -10,6 +10,11 @@ describe("difficulty", () => {
     expect(DIFFICULTY.hard.speed).toBeGreaterThan(DIFFICULTY.easy.speed);
     expect(DIFFICULTY.hard.batteries).toBeLessThan(DIFFICULTY.easy.batteries);
   });
+  it("practice mode cannot catch and never drains the flashlight", () => {
+    expect(DIFFICULTY.practice.practice).toBe(true);
+    expect(DIFFICULTY.practice.drain).toBe(0);
+    expect(DIFFICULTY.normal.practice).toBeFalsy();
+  });
   it("items are spread apart", () => {
     const picked = pickSpread(grid, 6, 5);
     expect(picked).toHaveLength(6);

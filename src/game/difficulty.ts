@@ -1,4 +1,4 @@
-export type Difficulty = "easy" | "normal" | "hard";
+export type Difficulty = "practice" | "easy" | "normal" | "hard";
 
 export interface DifficultyPreset {
   ru: string;
@@ -13,9 +13,12 @@ export interface DifficultyPreset {
   drain: number;
   /** Batteries placed on the map. */
   batteries: number;
+  /** Practice: the animatronic cannot catch the player. */
+  practice?: boolean;
 }
 
 export const DIFFICULTY: Record<Difficulty, DifficultyPreset> = {
+  practice: { ru: "Практика", en: "Practice", ruHint: "Аниматроник не может поймать, фонарик не садится", enHint: "The animatronic can't catch you, flashlight never drains", speed: 0.8, sight: 0.8, drain: 0, batteries: 6, practice: true },
   easy: { ru: "Лёгкая", en: "Easy", ruHint: "Аниматроник медленный, много батареек", enHint: "Slow animatronic, plenty of batteries", speed: 0.75, sight: 0.75, drain: 0.6, batteries: 8 },
   normal: { ru: "Нормальная", en: "Normal", ruHint: "Как задумано", enHint: "As intended", speed: 1, sight: 1, drain: 1, batteries: 6 },
   hard: { ru: "Кошмар", en: "Nightmare", ruHint: "Быстрый, зоркий, батареек мало", enHint: "Fast, sharp-eyed, few batteries", speed: 1.25, sight: 1.3, drain: 1.5, batteries: 3 },
