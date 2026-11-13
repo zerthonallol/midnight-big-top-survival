@@ -53,4 +53,10 @@ export const CHOICES: Choice[] = [
   } } },
 ];
 
+// Cassette found in the park; voiced as an old field recording.
+export const TAPE: { id: string; text: T } = { id: "tape1", text: {
+  ru: "…*шипение*… Он реагирует на свет. Если светишь прямо в глаз — идёт к тебе. И на шум тоже: когда запускаешь щиток, он слышит гул через весь парк. …Прячься в шкафчиках или под столом в операторской, пока не пройдёт мимо. Только не дай ему увидеть, куда ты залез… И ещё. У шпрехшталмейстера в вагончике осталась рация. Дай ей питание — может, кто-нибудь услышит. *щелчок*",
+  en: "…*static*… He follows light. Shine in his eye and he comes for you. Noise too: a running fuse box can be heard across the park. Hide in lockers or under the operator room table until he passes. Don't let him see you hide… One more thing. The ringmaster's wagon still has a radio. Get it some power — maybe someone will hear. *click*",
+} };
+
 export const voiceUrl = (lang: Lang, id: string) => `/voice/${lang}/${id}.wav`;
