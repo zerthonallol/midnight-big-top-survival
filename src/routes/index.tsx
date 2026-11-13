@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
+import { VoiceLine } from "@/components/game/VoiceLine";
 import type { Ending, EndStats, Game, Hud, Note, TokenColor } from "@/game/Game";
 import type { MenuScene } from "@/game/MenuScene";
 import { GFX, GFX_KEY, defaultGraphics, type Graphics } from "@/game/settings";
@@ -29,48 +30,50 @@ export const Route = createFileRoute("/")({
   component: Page,
 });
 
-const ENDINGS_RU: Record<Exclude<Ending, "release" | "keeper">, { title: string; tag: string; text: string; tone: string }> = {
+const ENDINGS_RU: Record<Exclude<Ending, "release" | "keeper" | "radio">, { title: string; tag: string; text: string; tone: string }> = {
   caught: {
     title: "ВАС ПОЙМАЛИ",
-    tag: "Концовка 1 из 6 · Новый костюм",
+    tag: "Концовка 1 из 7 · Новый костюм",
     tone: "text-primary",
     text: "Аниматроник Барни нежно поправил на вас соломенную шляпу. Утром охранник заметит у карусели второго аниматроника — новенького, с очень живыми глазами.",
   },
   dark: {
     title: "ТЬМА",
-    tag: "Концовка 2 из 6 · Без света",
+    tag: "Концовка 2 из 7 · Без света",
     tone: "text-muted-foreground",
     text: "Фонарик погас. Вы слышали только дождь и скрип сервоприводов — всё ближе. Последнее, что вы увидели, — один оранжевый глаз в темноте.",
   },
   escape: {
     title: "ВЫ СБЕЖАЛИ",
-    tag: "Концовка 3 из 6 · Побег",
+    tag: "Концовка 3 из 7 · Побег",
     tone: "text-accent",
     text: "Ворота с лязгом закрылись за спиной. Музыка карусели стихла под дождём. Но вы так и не узнали, что случилось в парке в 1987-м… Найдите все записи.",
   },
   truth: {
     title: "ПРАВДА",
-    tag: "Концовка 4 из 6 · Истинная",
+    tag: "Концовка 4 из 7 · Истинная",
     tone: "text-truth",
     text: "Вы вынесли кассету и записки. Через неделю газеты пишут о закрытом деле 1987 года, а парк обесточивают навсегда. Последний щиток гаснет — и где-то внутри Барни наконец перестаёт улыбаться.",
   },
 };
-const RELEASE_RU = { title: "ОСВОБОЖДЕНИЕ", tag: "Концовка 5 из 6 · Томми", tone: "text-truth", text: "Томми. Услышав своё имя, Барни замирает. Оранжевый глаз гаснет, из сломанного костюма выходит мальчик. Митч открывает ворота. Эта ночь наконец закончилась." };
-const KEEPER_RU = { title: "НОВЫЙ СТОРОЖ", tag: "Концовка 6 из 6 · Ваша смена", tone: "text-accent", text: "Вы берёте фонарь Митча. Старый сторож растворяется в дожде. Теперь это ваш парк. Вдалеке Барни поворачивается к свету. Начинается ваша первая смена." };
+const RELEASE_RU = { title: "ОСВОБОЖДЕНИЕ", tag: "Концовка 5 из 7 · Томми", tone: "text-truth", text: "Томми. Услышав своё имя, Барни замирает. Оранжевый глаз гаснет, из сломанного костюма выходит мальчик. Митч открывает ворота. Эта ночь наконец закончилась." };
+const KEEPER_RU = { title: "НОВЫЙ СТОРОЖ", tag: "Концовка 6 из 7 · Ваша смена", tone: "text-accent", text: "Вы берёте фонарь Митча. Старый сторож растворяется в дожде. Теперь это ваш парк. Вдалеке Барни поворачивается к свету. Начинается ваша первая смена." };
+const RADIO_RU = { title: "СИГНАЛ SOS", tag: "Концовка 7 из 7 · Рация", tone: "text-accent", text: "Сквозь треск отвечает дежурный: «Держитесь, высылаем вертолёт». Через двадцать минут прожектор режет дождь над куполом цирка. Барни смотрит вверх — и впервые за сорок лет отступает в темноту." };
 const ENDINGS_EN: Record<Ending, { title: string; tag: string; text: string; tone: string }> = {
-  caught: { title: "CAUGHT", tag: "Ending 1 of 6 · A new suit", tone: "text-primary", text: "Barney gently adjusts your straw hat. Tomorrow, the guard will find a second animatronic by the carousel — with very living eyes." },
-  dark: { title: "DARKNESS", tag: "Ending 2 of 6 · No light", tone: "text-muted-foreground", text: "Your flashlight died. Rain and servos were all you could hear, closer and closer. One orange eye was the last thing you saw." },
-  escape: { title: "YOU ESCAPED", tag: "Ending 3 of 6 · Escape", tone: "text-accent", text: "The gates slam behind you. The carousel falls silent in the rain. But what happened here in 1987? Find all the records." },
-  truth: { title: "THE TRUTH", tag: "Ending 4 of 6 · The truth", tone: "text-truth", text: "You brought out the tape and notes. The 1987 case is reopened, and the park loses power forever. Somewhere inside, Barney finally stops smiling." },
-  release: { title: "SET FREE", tag: "Ending 5 of 6 · Tommy", tone: "text-truth", text: "Tommy. At his name, Barney stops. The orange eye goes dark; the little boy steps out of the broken suit. Mitch opens the gate. This night is finally over." },
-  keeper: { title: "NIGHT WATCHMAN", tag: "Ending 6 of 6 · Your shift", tone: "text-accent", text: "You take Mitch’s lantern. The old watchman fades into the rain. The park is yours now. In the distance, Barney turns toward the light. Your first shift begins." },
+  caught: { title: "CAUGHT", tag: "Ending 1 of 7 · A new suit", tone: "text-primary", text: "Barney gently adjusts your straw hat. Tomorrow, the guard will find a second animatronic by the carousel — with very living eyes." },
+  dark: { title: "DARKNESS", tag: "Ending 2 of 7 · No light", tone: "text-muted-foreground", text: "Your flashlight died. Rain and servos were all you could hear, closer and closer. One orange eye was the last thing you saw." },
+  escape: { title: "YOU ESCAPED", tag: "Ending 3 of 7 · Escape", tone: "text-accent", text: "The gates slam behind you. The carousel falls silent in the rain. But what happened here in 1987? Find all the records." },
+  truth: { title: "THE TRUTH", tag: "Ending 4 of 7 · The truth", tone: "text-truth", text: "You brought out the tape and notes. The 1987 case is reopened, and the park loses power forever. Somewhere inside, Barney finally stops smiling." },
+  release: { title: "SET FREE", tag: "Ending 5 of 7 · Tommy", tone: "text-truth", text: "Tommy. At his name, Barney stops. The orange eye goes dark; the little boy steps out of the broken suit. Mitch opens the gate. This night is finally over." },
+  radio: { title: "SOS", tag: "Ending 7 of 7 · The radio", tone: "text-accent", text: "Through the static a dispatcher answers: \"Hold on, chopper's on the way.\" Twenty minutes later a searchlight cuts the rain above the big top. Barney looks up — and for the first time in forty years, backs into the dark." },
+  keeper: { title: "NIGHT WATCHMAN", tag: "Ending 6 of 7 · Your shift", tone: "text-accent", text: "You take Mitch’s lantern. The old watchman fades into the rain. The park is yours now. In the distance, Barney turns toward the light. Your first shift begins." },
 };
 const SEEN_KEY = "park-endings";
 const TOKEN_CLS: Record<TokenColor, string> = { red: "bg-primary", blue: "bg-truth", yellow: "bg-accent" };
 
 function Page() {
   const [lang, setLanguage] = useState<Lang>("ru");
-  const ENDINGS = lang === "ru" ? { ...ENDINGS_RU, release: RELEASE_RU, keeper: KEEPER_RU } : ENDINGS_EN;
+  const ENDINGS = lang === "ru" ? { ...ENDINGS_RU, release: RELEASE_RU, keeper: KEEPER_RU, radio: RADIO_RU } : ENDINGS_EN;
   const [skin, setSkin] = useState<SkinId>("classic");
   const [inventory, setInventory] = useState(false);
   const [ghost, setGhost] = useState(false);
@@ -177,10 +180,10 @@ function Page() {
             {hud.slots.length > 0 && <div className="text-muted-foreground">{hud.slots.map((s) => `${s.label}×${s.count}`).join(" · ")}</div>}
           </div>
           {hud.chase && <div className="absolute inset-0 animate-pulse shadow-[inset_0_0_160px_var(--glow)]" />}
-          <div className="absolute left-1/2 top-1/2 h-1 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground/60" />
+          <div className="absolute left-1/2 top-1/2 h-1 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground/70" />
           {hud.prompt && <div className={`absolute left-0 w-full text-center text-lg ${isTouch ? "bottom-40" : "bottom-24"}`}><span className="panel-glass rounded px-3 py-1">{isTouch ? <img src={CONTROL_IMAGES.hand} alt="" className="inline-block h-7 w-7 object-contain" /> : "[E]"} {hud.prompt}</span></div>}
           {hud.message && <div className="absolute top-28 left-0 w-full px-6 text-center text-sm md:top-16 md:text-lg">{hud.message}</div>}
-          {hud.paused && !isTouch && <div className="absolute inset-0 grid place-items-center bg-background/60 font-display text-2xl">{L("Кликните, чтобы продолжить", "Click to continue")}</div>}
+          {hud.paused && !isTouch && <div className="absolute inset-0 grid place-items-center bg-background/70 font-display text-2xl">{L("Кликните, чтобы продолжить", "Click to continue")}</div>}
         </div>
       )}
 
@@ -216,7 +219,7 @@ function Page() {
         <div className="absolute inset-0 grid place-items-center bg-background/80 p-4">
           <div className="panel-glass fade-up max-w-md rounded p-6 whitespace-pre-line">
             <h2 className="mb-3 font-display text-xl">{note.title}</h2>
-            {note.text}
+            {note.voice ? <VoiceLine lang={lang} id={note.voice} text={note.text} /> : note.text}
             <Button variant="ghost" className="mt-5 block text-accent underline" onClick={() => { setNote(null); game.current?.closeModal(); }}>{L("Закрыть", "Close")}</Button>
           </div>
         </div>
@@ -248,7 +251,7 @@ function Page() {
                   <p className="text-sm uppercase tracking-normal text-muted-foreground">{ENDINGS[ending.e].tag}</p>
                   <h1 className={`title-3d mt-2 text-5xl md:text-6xl ${ENDINGS[ending.e].tone}`}>{ENDINGS[ending.e].title}</h1>
                   <p className="mt-5 text-lg leading-relaxed text-foreground/85">{ENDINGS[ending.e].text}</p>
-                  <p className="mt-4 text-sm text-muted-foreground">{L("Время", "Time")} {fmt(ending.s.time)} · {L("Щитки", "Fuse boxes")} {ending.s.gens}/3 · {L("Записи", "Records")} {ending.s.notes}/{ending.s.notesTotal} · {L("Концовки", "Endings")} {seen.length}/6</p>
+                  <p className="mt-4 text-sm text-muted-foreground">{L("Время", "Time")} {fmt(ending.s.time)} · {L("Щитки", "Fuse boxes")} {ending.s.gens}/3 · {L("Записи", "Records")} {ending.s.notes}/{ending.s.notesTotal} · {L("Концовки", "Endings")} {seen.length}/7</p>
                   <nav className="mt-8">
                     <MenuItem onClick={startIntro} onHover={(v) => menu.current?.setFocus(v)}>{L("Ещё раз", "Try again")}</MenuItem>
                     <MenuItem onClick={() => { setScreen("menu"); setPanel("main"); }}>{L("В меню", "Main menu")}</MenuItem>
@@ -264,7 +267,7 @@ function Page() {
                       <MenuItem onClick={startIntro} onHover={(v) => menu.current?.setFocus(v)}>{L("Играть", "Play")}</MenuItem>
                       <MenuItem onClick={() => setPanel("controls")}>{L("Управление", "Controls")}</MenuItem>
                       <MenuItem onClick={() => setPanel("graphics")}>{L("Графика", "Graphics")}: {lang === "ru" ? GFX[gfx].label : gfx}</MenuItem>
-                      <MenuItem onClick={() => setPanel("endings")}>{L("Концовки", "Endings")} {seen.length}/6</MenuItem>
+                      <MenuItem onClick={() => setPanel("endings")}>{L("Концовки", "Endings")} {seen.length}/7</MenuItem>
                     </nav>
                   )}
                   {panel === "main" && <div className="mt-4 flex items-center gap-3">

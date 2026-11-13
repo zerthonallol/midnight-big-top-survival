@@ -6,15 +6,15 @@ import { brickTexture, concreteTexture, stripeTexture, signTexture, fogTexture, 
 import { GFX, type Graphics, type GfxPreset } from "./settings";
 import { buildBear, buildGhost, buildLocker, buildTable, buildArcade, buildGenerator, buildItem, type Bear, type ItemKind, type SkinId } from "./models";
 import { L } from "./i18n";
-import { availableStoryChoice, canReleaseBear } from "./story-rules";
-import { CHOICES } from "./story";
+import { availableStoryChoice, canReleaseBear, canCallRadio } from "./story-rules";
+import { CHOICES, TAPE } from "./story";
 import { DIFFICULTY, pickSpread, pickWander, type Difficulty, type DifficultyPreset } from "./difficulty";
 import { buildCircus, tentWallTexture } from "./circus";
-import { buildCabinet, buildCorpse, buildExhibit, buildCutout, buildCage, buildPopcornCart, scatterTrash, plankTexture, tileTexture } from "./props";
+import { buildCabinet, buildCorpse, buildExhibit, plankTexture, tileTexture } from "./props";
 
 // Legend: # brick wall, M mirror, . floor, D operator door, H locker, T table (hide),
 // A arcade, 1/2/3 generators, P start, X exit gate,
-// B building wall, , building floor (roofed), E exhibit case, K corpse, R trash pile
+// B building wall, , building floor (roofed), E exhibit case, K corpse, W ringmaster radio
 const MAP = [
   "##################################",
   "#.....#....#...........B,,,,,,,,,#",
@@ -22,10 +22,10 @@ const MAP = [
   "#.....#....#...........,,,,,,,,,,#",
   "###.#########.#######.#B,E,,,,E,,#",
   "#......................BBBBBB,BBB#",
-  "#.MMMMMMM....A....###..#.........#",
-  "#.M.....M........#.H#....R.....R.#",
-  "#.M.MMM.M........#..#..#.........#",
-  "#.M.M...M....H...##.#..#...R.....#",
+  "#.MMMMMMM....A....###..B,,,,,,,,W#",
+  "#.M.....M........#.H#..,,,,,,,,,,#",
+  "#.M.MMM.M........#..#..B,,,,K,,,,#",
+  "#.M.M...M....H...##.#..B,,,,,,,,,#",
   "#.M.M.MMM...........#.#BBBB,BBBBB#",
   "#.M.M...M.......#####..B,,,,,,,,,#",
   "#...MMM.M.......#.3....B,K,,,,K,,#",
@@ -47,7 +47,7 @@ export const TOKEN_RU = new Proxy({} as Record<TokenColor, string>, { get: (_, k
 const INV_NAMES: Record<InvId, [string, string]> = { fuse: ["Предохранитель", "Fuse"], cog: ["Шестерня", "Cog"], key: ["Ключ операторской", "Operator room key"], tokens: ["Жетоны", "Tokens"], mechkey: ["Механический ключ", "Wind-up key"] };
 const INV_LABEL = new Proxy({} as Record<InvId, string>, { get: (_, k: InvId) => L(...INV_NAMES[k]) });
 
-export interface Note { title: string; text: string; tape?: boolean }
+export interface Note { title: string; text: string; tape?: boolean; voice?: string }
 export interface Hud {
   battery: number;
   stamina: number;
@@ -62,7 +62,7 @@ export interface Hud {
   paused: boolean;
   notes: Note[];
 }
-export type Ending = "caught" | "dark" | "escape" | "truth" | "release" | "keeper";
+export type Ending = "caught" | "dark" | "escape" | "truth" | "release" | "keeper" | "radio";
 export interface EndStats { time: number; notes: number; notesTotal: number; gens: number }
 export interface GameCallbacks {
   onHud: (h: Hud) => void;
@@ -214,7 +214,7 @@ export class Game {
     this.sfx.startRain();
     this.startT = performance.now();
     this.flashMessage(L("Почините 3 электрощитка, чтобы открыть ворота. Берегитесь Аниматроника. Призрак сторожа рядом — поговорите с ним.", "Repair 3 fuse boxes to open the gate. Beware of the Animatronic. The watchman's ghost is nearby — talk to him."), 6);
-    if (this.D.practice) this.flashMessage(L("РЕЖИМ ПРАКТИКИ: Аниматроник бродит по парку, но не может вас поймать. Фонарик не садится.", "PRACTICE MODE: the Animatronic roams the park but cannot catch you. The flashlight never drains."), 7);
+    if (this.D.practice) this.flashMessage(L("РЕЖИМ ПРАКТИКИ: Аниматроник бродит по парку, не замечает и не ловит вас. Фонарик не садится.", "PRACTICE MODE: the Animatronic roams the park but never notices or catches you. The flashlight never drains."), 7);
     this.loop();
   }
 
@@ -227,7 +227,7 @@ export class Game {
     const ch = MAP[r][c] ?? "#";
     if (ch === "D") return !this.doorOpen;
     if (ch === "X") return forMonster || !this.gateOpen;
-    return "#MHTA123BE".includes(ch);
+    return "#MHTA123BEKW".includes(ch);
   }
   private solidAt(x: number, z: number, forMonster = false) {
     const [c, r] = this.cell(x, z);
@@ -326,7 +326,7 @@ export class Game {
       }
     const box = new THREE.BoxGeometry(S, WALL_H, S);
     const dummy = new THREE.Object3D();
-    const plank = new THREE.MeshStandardMaterial({ map: plankTexture(), roughness: 0.95 });
+    const plank = new THREE.MeshStandardMaterial({ map: tentWallTexture("#5a1a6a", "#e8c84a"), roughness: 0.9 });
     for (const [name, mat] of [["brick", brick], ["stripe", stripe], ["mirror", mirror], ["plank", plank]] as const) {
       const list = groups[name];
       const im = new THREE.InstancedMesh(box, mat, list.length);
@@ -606,7 +606,8 @@ export class Game {
     this.m.target.copy(this.cellCenter(...pickWander(this.waypoints, spawnCell, 8)));
 
     // mirror maze decoy reflections
-    for (const [c, r] of [[3, 9], [7, 7], [3, 12]]) {
+    this.bear.root.traverse((o) => { o.frustumCulled = false; });
+    for (const [c, r] of this.isTouch ? [] : [[3, 9], [7, 7], [3, 12]]) {
       const d = buildBear(this.skin);
       d.eyeLight.removeFromParent(); // unused lights still cost every pixel shader
       d.root.traverse((o) => { o.castShadow = false; });
@@ -706,18 +707,8 @@ export class Game {
       k.position.set(cx(c), 0, cx(r));
       sc.add(k);
     }
-    // circus props scattered around
-    const place = (g: THREE.Object3D, c: number, r: number, ry: number) => { g.position.set(cx(c), 0, cx(r)); g.rotation.y = ry; sc.add(g); };
-    place(buildCage(), 30, 8, 0.2);
-    place(buildPopcornCart(), 25, 8, 1.2);
-    place(buildCutout(), 24, 6, Math.PI / 2 + 0.3);
-    place(buildCutout(), 6, 15, 0.1);
-    place(buildPopcornCart(), 19, 5, -0.4);
-    place(buildCutout(), 15, 8, -0.6);
-    // trash everywhere, heavy piles on R cells
-    const light: THREE.Vector3[] = [];
-    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (".,K".includes(MAP[r][c]) && Math.random() < 0.45) light.push(this.cellCenter(c, r));
-    scatterTrash(sc, light, (special["R"] ?? []).map(([c, r]) => this.cellCenter(c, r)));
+    this.buildBunting();
+    this.buildRadio(special);
     // building signs
     const sign = (text: string, color: string, x: number, z: number, ry: number) => {
       const mat = new THREE.MeshBasicMaterial({ map: signTexture(text, color), toneMapped: false, fog: false });
@@ -731,6 +722,53 @@ export class Game {
     };
     sign("FREAK SHOW", "#ff7a2a", 23 * S - 0.02, cx(1.6), -Math.PI / 2);
     sign("BACKSTAGE", "#ff3b3b", cx(27), 10 * S - 0.02, Math.PI);
+    sign("RINGMASTER", "#ffd23a", 23 * S - 0.02, cx(6), -Math.PI / 2);
+  }
+
+  /** Strings of circus pennant flags over the walkways (one instanced mesh). */
+  private buildBunting() {
+    const strands: [number, number, number, number][] = [[1, 4, 22, 4], [1, 14, 22, 14], [9, 5, 16, 13], [16, 5, 9, 13], [12, 4, 12, 14], [24, 1, 32, 1], [24, 12, 32, 12]];
+    const pts: { p: THREE.Vector3; ry: number }[] = [];
+    for (const [c1, r1, c2, r2] of strands) {
+      const a = new THREE.Vector3(cx(c1), WALL_H - 0.1, cx(r1)), b = new THREE.Vector3(cx(c2), WALL_H - 0.1, cx(r2));
+      const n = Math.floor(a.distanceTo(b) / 0.7);
+      const ry = Math.atan2(b.x - a.x, b.z - a.z) + Math.PI / 2;
+      for (let i = 0; i <= n; i++) { const t = i / n; const p = a.clone().lerp(b, t); p.y -= Math.sin(t * Math.PI) * 0.9; pts.push({ p, ry }); }
+    }
+    const g = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-0.25, 0, 0), new THREE.Vector3(0.25, 0, 0), new THREE.Vector3(0, -0.5, 0)]);
+    const im = new THREE.InstancedMesh(g, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }), pts.length);
+    const cols = ["#c8202a", "#f0c84a", "#1f4d9a", "#e8e0c8", "#2a8a4a"].map((c) => new THREE.Color(c).multiplyScalar(0.55));
+    const d = new THREE.Object3D();
+    pts.forEach(({ p, ry }, i) => { d.position.copy(p); d.rotation.set(0, ry, 0); d.updateMatrix(); im.setMatrixAt(i, d.matrix); im.setColorAt(i, cols[i % cols.length]); });
+    this.scene.add(im);
+  }
+
+  /** Ringmaster's old radio: calls for rescue once enough fuse boxes run. */
+  private buildRadio(special: Record<string, [number, number][]>) {
+    const cell = special["W"]?.[0];
+    if (!cell) return;
+    const [c, r] = cell;
+    const grp = new THREE.Group();
+    const wood = new THREE.MeshStandardMaterial({ map: plankTexture(), color: "#7a4a2a", roughness: 0.9 });
+    const desk = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.9, 1.4), wood); desk.position.y = 0.45; grp.add(desk);
+    const radio = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.6, 0.6), new THREE.MeshStandardMaterial({ color: "#3a3428", metalness: 0.5, roughness: 0.6 }));
+    radio.position.set(0, 1.2, 0); grp.add(radio);
+    const dial = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.2), new THREE.MeshBasicMaterial({ color: "#ffb040", toneMapped: false }));
+    dial.position.set(0, 1.25, -0.31); dial.rotation.y = Math.PI; grp.add(dial);
+    const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1.4), new THREE.MeshStandardMaterial({ color: "#888", metalness: 1 }));
+    ant.position.set(0.4, 2.1, 0); ant.rotation.z = 0.3; grp.add(ant);
+    grp.position.set(cx(c), 0, cx(r)); grp.rotation.y = Math.PI / 2;
+    this.scene.add(grp);
+    this.interactables.push({
+      pos: new THREE.Vector3(cx(c) - 1.3, 1.2, cx(r)), alive: true,
+      label: () => L("Вызвать помощь по рации шпрехшталмейстера", "Call for help on the ringmaster's radio"),
+      use: () => {
+        this.sfx.tape();
+        if (!canCallRadio(this.gens)) return this.flashMessage(L(`Рация молчит. Нужно питание: запустите хотя бы 2 щитка (${this.gens}/2).`, `The radio is dead. It needs power: run at least 2 fuse boxes (${this.gens}/2).`), 4);
+        this.noise(this.pos, 100);
+        this.end("radio");
+      },
+    });
   }
 
   private cellCenter(c: number, r: number) {
@@ -833,7 +871,7 @@ export class Game {
     const notes: [ItemKind, Note][] = [
       ["note", { title: L("Записка техника", "Technician's note"), text: L(`Этот чёртов «Token Trial» опять глючит. Жетоны принимает только строго по порядку:\n\n${this.tokenOrder.map((c) => TOKEN_RU[c]).join(" → ")}\n\nЕсли перепутать — орёт сиреной на весь парк. В лотке выдачи лежит механический ключ от щитка №3.`, `That damn Token Trial is acting up again. Insert tokens in this exact order:\n\n${this.tokenOrder.map((c) => TOKEN_RU[c]).join(" → ")}\n\nGet it wrong and the siren wakes the whole park. The prize tray holds the wind-up key for fuse box #3.`) }],
       ["note", { title: L("Приказ о закрытии, 1987", "Closure order, 1987"), text: L("Парк «Весёлые Горки» закрывается немедленно после инцидента с ростовым аниматроником «Аниматроник Барни». Демонтаж робота отложен: при отключении питания он продолжает двигаться. Всем сотрудникам — не входить на территорию после заката.", "Happy Hills is closed immediately following the incident involving Barney the Animatronic. Dismantling is postponed: the robot continues moving without power. All employees: do not enter after sunset.") }],
-      ["tape", { title: L("Кассета: «Смена 14»", "Tape: Shift 14"), tape: true, text: L("…*шипение*… Он реагирует на свет. Если светишь прямо в глаз — идёт к тебе. И на шум тоже: когда запускаешь щиток, он слышит гул через весь парк. …Прячься в шкафчиках или под столом в операторской, пока не пройдёт мимо. Только не дай ему увидеть, куда ты залез… *щелчок*", "…*static*… He follows light. Shine in his eye and he comes for you. Noise too: a running fuse box can be heard across the park. Hide in lockers or under the operator room table until he passes. Don't let him see you hide… *click*") }],
+      ["tape", { title: L("Кассета: «Смена 14»", "Tape: Shift 14"), tape: true, voice: TAPE.id, text: L(TAPE.text.ru, TAPE.text.en) ?? L("…*шипение*… Он реагирует на свет. Если светишь прямо в глаз — идёт к тебе. И на шум тоже: когда запускаешь щиток, он слышит гул через весь парк. …Прячься в шкафчиках или под столом в операторской, пока не пройдёт мимо. Только не дай ему увидеть, куда ты залез… *щелчок*", "…*static*… He follows light. Shine in his eye and he comes for you. Noise too: a running fuse box can be heard across the park. Hide in lockers or under the operator room table until he passes. Don't let him see you hide… *click*") }],
     ];
     this.notesTotal = notes.length;
     for (const [kind, note] of notes) {
@@ -991,7 +1029,7 @@ export class Game {
   }
 
   private noise(p: THREE.Vector3, radius: number) {
-    if (this.m.mode === "chase") return;
+    if (this.D.practice || this.m.mode === "chase") return;
     if (this.m.pos.distanceTo(new THREE.Vector3(p.x, 0, p.z)) > radius) return;
     this.m.mode = "investigate";
     this.m.target.set(p.x, 0, p.z);
@@ -1129,6 +1167,7 @@ export class Game {
     if (this.hidden && m.knowsHide) {
       sees = true;
     }
+    if (this.D.practice) sees = false;
 
     if (sees) {
       if (m.mode !== "chase") this.sfx.screech(1);

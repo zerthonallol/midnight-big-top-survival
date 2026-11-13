@@ -9,3 +9,4 @@
 - [x] Practice mode (animatronic can't catch, no battery drain)
 - [x] Mobile: animatronic invisible fix (lite materials + light budget)
 - [x] Items spawn inside broken cabinets with opening animation
+- [x] Trash and walk-through props removed, practice bear never notices, Ringmaster room + radio ending, voiced tape
