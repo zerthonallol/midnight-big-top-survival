@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { availableStoryChoice, canReleaseBear } from "./story-rules";
+import { availableStoryChoice, canReleaseBear, canCallRadio } from "./story-rules";
 
 describe("additional endings", () => {
   it("unlocks the release conversation only after all three records", () => {
@@ -16,5 +16,9 @@ describe("additional endings", () => {
     expect(canReleaseBear(true, true, 2, true)).toBe(false);
     expect(canReleaseBear(true, false, 4, true)).toBe(false);
     expect(canReleaseBear(true, false, 2, false)).toBe(false);
+  });
+  it("radio rescue needs at least two running fuse boxes", () => {
+    expect(canCallRadio(1)).toBe(false);
+    expect(canCallRadio(2)).toBe(true);
   });
 });
